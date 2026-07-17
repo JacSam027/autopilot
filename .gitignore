@@ -1,0 +1,12 @@
+# 真实测试账号 / 密码 —— 禁止提交
+# 仓库只提供 accounts.local.example.md 模板；复制为 accounts.local.md 后填真实账号
+/accounts.local.md
+
+# 运行时产物（模板在 templates/ 下，这里只忽略根目录的运行时副本，不影响 templates/）
+/DECISIONS.md
+/SHIFT_REPORT.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
