@@ -33,6 +33,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - 不可逆 / 破坏性：删库（DROP）、删生产资源、force-push、批量删数据、无法回滚的 schema 变更 / migrate（普通 INSERT / UPDATE 写入**不**在此列，见 DB 授权）
 - 安全风险且有外部影响：改鉴权、暴露密钥、对外开端口、放宽权限
 - **任何数据删除**（DELETE / DROP / TRUNCATE 等），以及**超出本次声明授权范围**的敏感操作（见下方「项目专属授权」）
+- **push 到用户未授权的分支**：push 默认禁止；仅当用户明确点名某个 / 某些分支时才允许，且**只能 push 被点名的那些分支**（用户授权 `feature-a`，却去 push `main` 或其他分支 → 禁止）。force-push 始终 HARD STOP，除非用户**单独**明确授权。
 - 两条路都很贵、且无法自信二选一的
 - 剩下所有任务都被 parked 决策卡住、没有别的可推进时
 
@@ -114,12 +115,14 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
   - 🕓 临时数据：测试等过程产生的临时数据**中途不要删**，记进「待清理」清单（落盘到 SHIFT_REPORT 草稿）；**完整流程跑完后**在汇报里提示用户，由用户决定是否删除——未获明确确认前不删。
   - 调用时可声明更严（如「只读」）。**默认不放开删除权限**，除非用户明确授权。
 - **可管理的端口**：如声明「8006 端口占用程序的启用 / 重启」→ 你可对该端口对应进程 **启动 / 重启 / 关闭**。只动声明过的端口，并记录做了什么、为什么。
+- **可 push 的分支**：默认禁止 push。若用户明确声明「可 push 到 `feature-x`」之类 → 允许 push，但**仅限用户点名的分支**，超出范围一律 HARD STOP。force-push 不含在内，需**单独**明确授权。
 - 其他声明（可调用的内网服务、可用账号范围等）同样照此办理。
 
 **通用边界（始终适用）**
 - **只在本地 PC 测试 / 起服务**，不碰远程 / 生产环境。
-- **不要**：push、改远端 CI 配置、删生产数据、对外暴露密钥——这些走 HARD STOP。
-- **git**：可以本地 commit（遵循仓库的提交规范），**不要 push**，除非用户明确授权。
+- **不要**：改远端 CI 配置、删生产数据、对外暴露密钥——这些走 HARD STOP。
+- **git**：可以本地 commit（遵循仓库的提交规范）。
+- **push 默认禁止，按分支白名单放行**：默认不 push。仅当用户**明确点名**某个 / 某些分支时才允许 push，且**只能 push 用户点名的那些分支**——授权范围外的分支一律 HARD STOP（用户授权了 `feature-a` 却去 push `main` 或其他分支 = 禁止）。force-push 始终 HARD STOP，除非用户**单独**明确授权。
 - **回滚友好**：尽量让每一步都可逆（小步 commit、新代码先加再删旧的），减少 HARD STOP 的触发。
 
 ## 相关 skill 与工具
