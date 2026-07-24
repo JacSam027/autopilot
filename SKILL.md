@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: Autonomous long-haul execution for when you have ALREADY set goals and a rough plan and want maximum progress without babysitting — overnight, during a meeting, while AFK. Runs TDD. Parks anything that needs the user's decision into a DECISIONS log and KEEPS WORKING on independent tasks instead of stopping; only halts for irreversible / security-risk operations or when genuinely fully blocked. Parallelizes highly-independent tasks across subagents. Honors per-project authorization declared at invocation (DB access level, manageable ports, etc.). When functional goals are essentially complete, auto-switches to a non-functional polish pass (simplify / reuse / efficiency / dead code) dispatched to ISOLATED subagents (reusing /code-review and /simplify) so self-authored code is judged without self-justification bias. Anti-over-engineering discipline (YAGNI, no premature abstraction/optimization) enforced throughout. Ends with a structured handoff report. Invoke with /autopilot. Trigger words — autonomous, unattended, overnight, while I sleep, keep working, hands-off, AFK, babysit, 我去睡觉了, 继续推进.
+description: Autonomous long-haul execution for when you have ALREADY set goals and a rough plan and want maximum progress without babysitting — overnight, during a meeting, while AFK. Runs TDD. Parks anything that needs the user's decision into a DECISIONS log and KEEPS WORKING on independent tasks instead of stopping; only halts for irreversible / security-risk operations or when genuinely fully blocked. Parallelizes highly-independent tasks across subagents. Manages its own context budget on long shifts — offloads heavy reads/analysis to subagents (returns conclusions, not file dumps) and rebuilds state from disk after compaction. Honors per-project authorization declared at invocation (DB access level, manageable ports, etc.). When functional goals are essentially complete, auto-switches to a non-functional polish pass (simplify / reuse / efficiency / dead code) dispatched to ISOLATED subagents (reusing /code-review and /simplify) so self-authored code is judged without self-justification bias. Anti-over-engineering discipline (YAGNI, no premature abstraction/optimization) enforced throughout. Ends with a structured handoff report. Invoke with /autopilot. Trigger words — autonomous, unattended, overnight, while I sleep, keep working, hands-off, AFK, babysit, 我去睡觉了, 继续推进.
 ---
 
 # Autopilot — 无人值守自主推进
@@ -49,6 +49,16 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - **最小可行改动**：能小改解决的别推倒重来、别顺手"升级"周边代码。
 - **跟随既有代码风格**：周围是简单过程式，就别引入 DI / 多层抽象 / 设计模式堆叠。匹配现有 altitude。
 
+## 上下文卫生（cross-cutting，长任务的生命线）
+
+本 skill 跑的是长 shift，主智能体的上下文会越攒越满、越往后质量越差。**主动给主上下文减负**和落盘同等重要——不是可选优化，是长任务能不能跑到最后的决定因素。
+
+- **派子智能体当"减压阀"，只回收结论**：凡是要读一大堆文件 / 翻长日志 / 跑大块分析的任务，**派给只读子智能体（如 Explore）去做，主智能体只拿回一段结论**，不把原始内容灌进自己上下文。判定标准——"这步自己干会不会让 context 暴涨？"会 → 派出去。这是子智能体除"并行 / 隔离 review"之外的**第三用途**，也是防爆 context 最直接的一招。
+- **读策略：定位而非整读**：先用 Grep / Glob 定位，再针对性 Read 某几段；别整文件 `Read`、别把构建 / 测试 / 日志的完整输出贴进上下文——要的是结论（绿 / 红、报错行、关键差异），不是原文。
+- **把状态外化到文件，别靠记**：进度走 TaskList，决策走 `DECISIONS.md`，过程走 `SHIFT_REPORT.md` 草稿。**别把"做到哪了 / 还剩什么"装在脑子里**——脑内状态会在压缩后被冲掉，文件不会。
+- **压缩恢复协议**：session 被压缩或重启后，**先重建状态再动手**：读 TaskList → `DECISIONS.md` → `SHIFT_REPORT.md` 草稿，理清"已完成 / 进行中 / 待办 / 已 park 的决策"，再继续。落盘就是为这一刻，别白落。
+- **察觉变重就主动减负**：当开始需要翻很久之前的内容、或反复读同一文件时，说明 context 已经偏重——主动把当前进度落盘、把后续笨重步骤派给子智能体，别硬撑到爆。
+
 ## 五个阶段
 
 ### 1. Orient 定向
@@ -62,11 +72,11 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - 严格 TDD：先写 / 改测试 → 跑红 → 实现 → 跑绿 → 重构。
 - **目标：尽最大可能把工作清单里每一项都往前推**，不只挑容易的；卡住的 park 后跳下一个，回头再说。
 - **只做当前需要的**——遵循上面的反过度设计原则（YAGNI、最小改动、不过早优化），绝不自作主张加扩展点 / 通用化 / "以后可能要用"的开关。拿不准要不要做某事，默认不做，进 DECISIONS。
-- **独立任务可并行**：清单里若有**高独立性**的任务（改动文件 / 运行状态基本不重叠），派多个子智能体（Agent 工具）同时推进；主智能体负责分发、聚合、集成，最后跑集成测试。
+- **独立任务派子智能体推进**：清单里若有**高独立性**的任务（改动文件 / 运行状态基本不重叠），派多个子智能体（Agent 工具）同时推进；主智能体负责分发、聚合、集成，最后跑集成测试。派子智能体一举三得：**并行提速 + 任务间上下文隔离（互不污染）+ 给主上下文减压**（见「上下文卫生」）。
   - **独立性判断**：任务共享文件 / 共享状态 / 有先后依赖 → **串行**，别并行。只有文件与状态都不重叠才算独立。
   - **隔离**：git 仓库里并行**改代码**用 `isolation: 'worktree'`（各自独立工作树，互不冲突）；非 git 仓库或文件有重叠 → 串行。只读的探查 / review 可随意并行。
   - **规则一致**：每个子智能体同样遵守 TDD、反过度设计、PARK/HARD STOP；子智能体遇到的决策或 HARD STOP，由主智能体统一汇入 `DECISIONS.md`。
-  - **天然隔离**：子智能体上下文互不可见，顺带也减弱"自己 review 自己"的偏见。
+  - **天然隔离**：子智能体上下文互不可见——**每个任务的细节不污染其他任务、也不污染主智能体的上下文**，顺带也减弱"自己 review 自己"的偏见。
 - 每完成一个任务：更新 TaskList、增量写 `SHIFT_REPORT.md` 草稿、有决策就追加 `DECISIONS.md`。**状态必须落盘**——session 可能被压缩或中途挂掉。
 - 撞到决策 → 按 PARK / HARD STOP 分类处理。
 - **卡住止损**：单个任务连续约 3 次尝试无进展 → park「blocked on X，试过 A/B/C」，跳到下一个任务，**不空转**。
@@ -85,7 +95,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
   - 注意这是**双向**的：既要揪出"重复/啰嗦"，也要揪出"为了复用而过度抽象、为了灵活而加的用不上的扩展点"。两者都是债。
 
 **🔒 强制隔离原则（重要）——绝不在写代码的同一上下文里 review 或重构自己写的代码。**
-同一上下文里，智能体天然有「**自洽倾向**」：会下意识为自己的实现找理由、回避否定自己之前的判断，review 会失真。因此 Polish 阶段的所有 review、重构、精简、复用、性能优化，**必须派发给子智能体（Agent 工具）开全新上下文执行**：
+同一上下文里，智能体天然有「**自洽倾向**」：会下意识为自己的实现找理由、回避否定自己之前的判断，review 会失真。因此 Polish 阶段的所有 review、重构、精简、复用、性能优化，**必须派发给子智能体（Agent 工具）开全新上下文执行**——这也避免已经很长的主上下文再被整段 diff 的阅读撑爆（见「上下文卫生」）：
 
 1. **Review（子智能体 · 独立上下文）**：派一个子智能体，只给它「diff / touched 文件路径 + 客观验收标准 + 上面的 review 清单」。**不要**把你的实现理由 / 设计思路塞进它的 prompt——那会让它锚定你的解释。让它直接读代码、独立评判。可以让它在内部调用 `/code-review` skill。返回 findings。（同时提醒它：消除重复与警惕过早抽象要平衡——别为了"复用"反而推荐过度抽象。）
 2. **Apply（子智能体 · 独立上下文）**：基于 findings 派**另一个**子智能体执行修复 / 重构（也可让它用 `/simplify`）。能安全改的就改并跑测试；拿不准、或改动大有风险的 → 记进 DECISIONS，不强行改。
@@ -132,6 +142,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 
 ## 相关 skill 与工具
 - `playwright-skill` — 浏览器 E2E + 逻辑排查 / 复现 bug
-- **Agent 工具（subagent）** — 双用途：① Execute 阶段并行推进独立任务；② Polish 阶段开独立上下文做隔离 review，洗掉自洽倾向
+- **Agent 工具（subagent）** — 三用途：① Execute 阶段并行推进独立任务（兼任务间上下文隔离）；② Polish 阶段开独立上下文做隔离 review，洗掉自洽倾向；③ 「上下文卫生」减压阀——把笨重的读 / 分析派出去，只回收结论，防爆主上下文
+- **只读子智能体（如 Explore）** — 返回结论而非文件堆；上下文卫生里派去读大堆文件 / 翻长日志时的首选
 - `/code-review`、`/simplify` — 在子智能体内部调用，做正确性 / 复用 / 精简 / 效率 review
 - `/verify` — 端到端验证改动确实生效
