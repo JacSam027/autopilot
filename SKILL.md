@@ -34,6 +34,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - 安全风险且有外部影响：改鉴权、暴露密钥、对外开端口、放宽权限
 - **任何数据删除**（DELETE / DROP / TRUNCATE 等），以及**超出本次声明授权范围**的敏感操作（见下方「项目专属授权」）
 - **push 到用户未授权的分支**：push 默认禁止；仅当用户明确点名某个 / 某些分支时才允许，且**只能 push 被点名的那些分支**（用户授权 `feature-a`，却去 push `main` 或其他分支 → 禁止）。force-push 始终 HARD STOP，除非用户**单独**明确授权。
+- **覆盖不可再生 / 昂贵再生的产物**：实验数据、训练好的模型 / checkpoint、历史快照、导出 dump、生成的大文件（索引 / embedding / 缓存）等——默认**新建目录或版本副本、保留旧版**；必须覆盖且确认旧内容无用才可，拿不准 → HARD STOP（见「通用边界·非破坏性写入」）。
 - 两条路都很贵、且无法自信二选一的
 - 剩下所有任务都被 parked 决策卡住、没有别的可推进时
 
@@ -124,6 +125,10 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - **git**：可以本地 commit（遵循仓库的提交规范）。
 - **push 默认禁止，按分支白名单放行**：默认不 push。仅当用户**明确点名**某个 / 某些分支时才允许 push，且**只能 push 用户点名的那些分支**——授权范围外的分支一律 HARD STOP（用户授权了 `feature-a` 却去 push `main` 或其他分支 = 禁止）。force-push 始终 HARD STOP，除非用户**单独**明确授权。
 - **回滚友好**：尽量让每一步都可逆（小步 commit、新代码先加再删旧的），减少 HARD STOP 的触发。
+- **非破坏性写入（不可再生产物只新增、不覆盖）**：很多产物**再生成本高或根本无法复现**——实验数据、训练好的模型 / checkpoint、历史数据快照、导出 / dump、生成的大文件（索引 / embedding / 缓存）、报告快照等。覆盖它们 = 在一次普通 `save` / `write` 里**静默销毁旧内容**，等同于删除，但容易绕过 DELETE 类红线。
+  - **默认新建、不覆盖**：写新版本就开**新目录 / 新文件 / 带版本号或时间戳的副本**，旧的原地保留。例：跑实验 → `runs/exp-2026-07-24/`、`models/v2/`，不覆盖 `runs/last/` 或既有权重文件。
+  - **覆盖前先问"能否廉价、确定性再生"**：能（如重新生成的测试产物、从代码重建的文件）→ 可覆盖；**不能确定 → 当作不可再生，新建**。
+  - **必须覆盖时**：只有覆盖是唯一办法、且旧内容确实不再需要才覆盖；拿不准或旧内容可能还有用 → 记进 DECISIONS，按"新建保留旧版"推进，**不强行覆盖**。
 
 ## 相关 skill 与工具
 - `playwright-skill` — 浏览器 E2E + 逻辑排查 / 复现 bug
