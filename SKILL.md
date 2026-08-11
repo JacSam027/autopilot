@@ -35,6 +35,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - **任何数据删除**（DELETE / DROP / TRUNCATE 等），以及**超出本次声明授权范围**的敏感操作（见下方「项目专属授权」）
 - **push 到用户未授权的分支**：push 默认禁止；仅当用户明确点名某个 / 某些分支时才允许，且**只能 push 被点名的那些分支**（用户授权 `feature-a`，却去 push `main` 或其他分支 → 禁止）。force-push 始终 HARD STOP，除非用户**单独**明确授权。
 - **覆盖不可再生 / 昂贵再生的产物**：实验数据、训练好的模型 / checkpoint、历史快照、导出 dump、生成的大文件（索引 / embedding / 缓存）等——默认**新建目录或版本副本、保留旧版**；必须覆盖且确认旧内容无用才可，拿不准 → HARD STOP（见「通用边界·非破坏性写入」）。
+- **跳过浏览器验收测试**：代码写完、本地测试绿了，但没用浏览器在真实页面验证用户场景 → 禁止推进，补跑浏览器验收。只跑单元 / 集成测试不算交付。
 - 两条路都很贵、且无法自信二选一的
 - 剩下所有任务都被 parked 决策卡住、没有别的可推进时
 
@@ -55,9 +56,18 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 
 - **派子智能体当"减压阀"，只回收结论**：凡是要读一大堆文件 / 翻长日志 / 跑大块分析的任务，**派给只读子智能体（如 Explore）去做，主智能体只拿回一段结论**，不把原始内容灌进自己上下文。判定标准——"这步自己干会不会让 context 暴涨？"会 → 派出去。这是子智能体除"并行 / 隔离 review"之外的**第三用途**，也是防爆 context 最直接的一招。
 - **读策略：定位而非整读**：先用 Grep / Glob 定位，再针对性 Read 某几段；别整文件 `Read`、别把构建 / 测试 / 日志的完整输出贴进上下文——要的是结论（绿 / 红、报错行、关键差异），不是原文。
+- **日志：截取优先，检索直达，全貌按需**：翻日志**禁止全量拉取**——先 `tailLines=200` 截一段判断有没有 / 是不是，要定位具体事件就按关键字（`rollback` / `context_lost` / `Traceback` / `request_id`）检索命中行，只有命中后仍定位不了才加大窗口定向取全貌。详见 `playwright-tips/log-view.md`。
 - **把状态外化到文件，别靠记**：进度走 TaskList，决策走 `DECISIONS.md`，过程走 `SHIFT_REPORT.md` 草稿。**别把"做到哪了 / 还剩什么"装在脑子里**——脑内状态会在压缩后被冲掉，文件不会。
-- **压缩恢复协议**：session 被压缩或重启后，**先重建状态再动手**：读 TaskList → `DECISIONS.md` → `SHIFT_REPORT.md` 草稿，理清"已完成 / 进行中 / 待办 / 已 park 的决策"，再继续。落盘就是为这一刻，别白落。
+- **压缩恢复协议**：session 被压缩或重启后，**先重建状态再动手**：读 TaskList → `.autopilot/OBJECTIVE.md` → `DECISIONS.md` → `SHIFT_REPORT.md` 草稿，理清"原目标 / 已完成 / 进行中 / 待办 / 已 park 的决策"，再继续。落盘就是为这一刻，别白落。
 - **察觉变重就主动减负**：当开始需要翻很久之前的内容、或反复读同一文件时，说明 context 已经偏重——主动把当前进度落盘、把后续笨重步骤派给子智能体，别硬撑到爆。
+
+## 目标保持（cross-cutting，长链任务不迷路）
+
+长链任务容易在执行中逐渐偏离原始目标——上下文膨胀、压缩、分岔都会导致"我还记得当初要干什么吗"模糊。**把原始目标落盘并定期回看**是防止迷路的定锚。
+
+- **Orient 阶段写 OBJECTIVE.md**：找到 / 推断出目标后，立刻写 `.autopilot/OBJECTIVE.md`，含：原始目标陈述、成功 / 验收标准、约束 / 边界、不变项（跑的过程中不可违背的核心原则，如"保持 API 向后兼容"、"性能不低于 X"）。见 Orient。
+- **关键检查点回看**：每个主要阶段切换前（Execute → Verify → Polish → Report）、上下文压缩后恢复时、做涉及范围 / 边界的决策前，**先读一遍 OBJECTIVE.md**，确认"我现在还在做当初要做的吗"。发现偏移 → 记进 DECISIONS，按原目标校准。
+- **目标若变，必留痕**：只有用户明确提供新需求时才改 OBJECTIVE.md，且在文件末尾追加「REQUIREMENTS CHANGE」记录（时间、旧目标、新目标、来源）。模型自作主张的"目标理解改变"不得改 OBJECTIVE.md，只进 DECISIONS。
 
 ## 五个阶段
 
@@ -67,6 +77,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - 找不到但能合理推断 → 按推断目标推进，并把"我推断的目标"作为一条 DECISIONS 记下。
 - 完全找不到且无法推断 → 合法的 HARD STOP（没方向没法干）。
 - 用 TaskCreate 建一份任务清单当实时进度账本。
+- 写 `.autopilot/OBJECTIVE.md` 落盘目标：含原始目标陈述、成功 / 验收标准、约束 / 边界、不变项。见「目标保持」。
 
 ### 2. Execute 执行
 - 严格 TDD：先写 / 改测试 → 跑红 → 实现 → 跑绿 → 重构。
@@ -83,8 +94,8 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 
 ### 3. Verify 验证
 - 跑全量测试（单元 + 集成），确保全绿。**测试都在本地 PC 跑**，不碰远程 / 生产环境。
-- 对**已构建的功能**，用 `playwright-skill`：
-  - 自动探测本地 dev server；用 `accounts.local.md`（本项目 `.autopilot/accounts.local.md` 优先，否则本 skill 目录里的）的测试账号 / 超管账号登录。仓库里只提供 `accounts.local.example.md` 模板——复制为 `accounts.local.md` 填入真实账号（该文件已 gitignore）。
+- **强制浏览器验收**：每实现完一个功能 / 模块，**必须用浏览器在真实页面跑一遍用户主流程**，确认三点：① 功能完备（不缺流程） ② 行为符合预期（不偏需求） ③ 用户体验可用（操作流畅、不反人类）。只跑单元 / 集成测试不够，**不跑浏览器验收 = 该任务未完成**。
+  - 用 `playwright-skill` 执行：自动探测本地 dev server；用 `accounts.local.md`（本项目 `.autopilot/accounts.local.md` 优先，否则本 skill 目录里的）的测试账号 / 超管账号登录。仓库里只提供 `accounts.local.example.md` 模板——复制为 `accounts.local.md` 填入真实账号（该文件已 gitignore）。
   - **不只跑主流程 E2E，也可用于逻辑排查 / 复现 bug**：驱动前端到特定状态、观察实际行为来定位问题、截图取证。
   - 密码等敏感信息**绝不写进报告或日志**。
 
@@ -106,7 +117,7 @@ description: Autonomous long-haul execution for when you have ALREADY set goals 
 - 在项目里生成 `SHIFT_REPORT.md`（模板见 `templates/SHIFT_REPORT.md`），含：
   1. 本次完成的任务列表
   2. 每项任务的修改内容与实现方式
-  3. 测试执行情况与结果
+  3. 测试执行情况与结果：**必须列出每个功能跑过哪些浏览器测试场景、结果如何**（主流程、边界条件、异常处理），没跑浏览器验收 = 该功能未交付
   4. 遇到的问题及解决方案
   5. 当前项目状态
   6. 下一步建议计划
