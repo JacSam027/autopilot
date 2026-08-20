@@ -79,6 +79,33 @@ last_updated: 2026-08-13
 
 **关键原则**：短 prompt 单测有盲区，必须在真实长 prompt 上验证
 
+### thinking/reasoning block 处理
+
+带 thinking/reasoning 机制的模型（Claude thinking、deepseek-v4、GPT-o1 等）在输出处理时需要特殊考虑：
+
+**三层失败模式防范**：
+1. **识别失败**：解析器必须能跳过 thinking block，不将其当成目标输出解析
+2. **结构化输出处理失败**：thinking block 打断输出结构，需要多段提取或容错解析
+3. **超长截断**：thinking 消耗大量 token，必须预留足够的 max_tokens
+
+**解析器适配要求**：
+- 支持 thinking 标签跳过：如 `<thinking>...</thinking>`、`<reasoning>...</reasoning>`
+- 多段 JSON 提取：真实内容可能在 thinking 之后，不能只取第一个 JSON 块
+- 容错解析：thinking 插入 JSON 中导致格式错误时，能清理后重解析
+
+**配置预留策略**：
+- **max_tokens 必须为 thinking 预留空间**：通常需要 2000-4000 token（取决于任务复杂度）
+- 测试时监控 thinking 长度：记录 thinking 平均消耗 token 数，按此调整预留
+- 分阶段输出：如果 thinking 超长，考虑分步骤输出或禁用 thinking（如果模型支持）
+
+**验证清单**：
+1. 解析器能正确跳过 thinking block 吗？
+2. 结构化输出在 thinking 之后能被提取吗？
+3. max_tokens 预留足够吗？（测试时统计 thinking 长度）
+4. 短 prompt 不触发 thinking，长 prompt 会触发吗？
+
+**关键原则**：thinking 机制是常见问题源头，必须在解析器和配置两个层面适配
+
 ---
 
 ## autopilot 何时读本文件
